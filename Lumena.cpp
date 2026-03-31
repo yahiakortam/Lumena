@@ -10,11 +10,18 @@
 /*============================================================================*/
 /*  HARDWARE IS DEFINED IN THE PRAGMA REGION ABOVE.                           */
 /*============================================================================*/
+/*                                                                            */
 /*  Expected devices in Robot Configuration:                                  */
-/*    motor  LeftFront, LeftBack, RightFront, RightBack                       */
-/*    motor  ArmMotor, ClawMotor                                              */
-/*    optical Optical10                                                       */
-/*    distance DistanceSensor                                                 */
+/*    drivetrain  Drivetrain  (LeftMotor + RightMotor, or however configured) */
+/*    motor       ArmMotor                                                    */
+/*    motor       ClawMotor                                                   */
+/*    optical     Optical10                                                   */
+/*    distance    DistanceSensor                                              */
+/*                                                                            */
+/*  The Drivetrain is configured in Robot Config with its own motors.         */
+/*  We use Drivetrain.drive(), Drivetrain.turnFor(), etc.                     */
+/*  ArmMotor, ClawMotor, Optical10, DistanceSensor must be added separately.  */
+/*                                                                            */
 /*============================================================================*/
 
 // Include the V5 Library
@@ -32,7 +39,7 @@ competition Competition;
 /*============================================================================*/
 
 //--- Speed defaults (percent) ---
-const double DRIVE_SPEED_DEFAULT = 60;
+const double DRIVE_SPEED_DEFAULT = 50;
 const double TURN_SPEED_DEFAULT  = 45;
 const double ARM_SPEED_UP        = 40;
 const double ARM_SPEED_DOWN      = 25;
@@ -46,11 +53,10 @@ const int CLAW_OPEN_TIME_MS   = 400;
 const int CLAW_CLOSE_TIME_MS  = 400;
 
 //--- Lawnmower traverse (MUST TUNE) ---
-const int TURN_90_TIME_MS       = 600;    // time to turn 90 degrees
-const int LANE_DRIVE_TIME_MS    = 3000;   // time to drive one 72in lane
-const int SHIFT_OVER_TIME_MS    = 500;    // time to drive 6 inches sideways
-const double TRAVERSE_SPEED     = 50;     // slower speed for scanning
-const int NUM_LANES             = 12;     // 72 inches / 6 inch spacing
+const double LANE_DISTANCE_IN    = 72.0;   // length of one lane in inches
+const double SHIFT_DISTANCE_IN   = 6.0;    // shift between lanes in inches
+const double TURN_90_DEGREES     = 90.0;   // 90 degree turn
+const int NUM_LANES              = 12;     // 72 inches / 6 inch spacing
 
 //--- Sensor thresholds (MUST TUNE) ---
 const double MINERAL_BRIGHTNESS_THRESHOLD = 80;   // white tape on dark foam
@@ -81,41 +87,17 @@ void printLine(const char* text) {
 
 
 /*============================================================================*/
-/*  DRIVE HELPERS                                                             */
+/*  DRIVE HELPERS (using Drivetrain object)                                   */
 /*============================================================================*/
 
 void stopDrive() {
-  LeftFront.stop(brake);
-  LeftBack.stop(brake);
-  RightFront.stop(brake);
-  RightBack.stop(brake);
+  Drivetrain.stop();
 }
 
-void driveForwardTimed(double speedPct, int timeMs) {
-  LeftFront.spin(forward,  speedPct, percent);
-  LeftBack.spin(forward,   speedPct, percent);
-  RightFront.spin(forward, speedPct, percent);
-  RightBack.spin(forward,  speedPct, percent);
-  waitMs(timeMs);
-  stopDrive();
-}
-
-void turnLeftTimed(double speedPct, int timeMs) {
-  LeftFront.spin(reverse,  speedPct, percent);
-  LeftBack.spin(reverse,   speedPct, percent);
-  RightFront.spin(forward, speedPct, percent);
-  RightBack.spin(forward,  speedPct, percent);
-  waitMs(timeMs);
-  stopDrive();
-}
-
-void turnRightTimed(double speedPct, int timeMs) {
-  LeftFront.spin(forward,  speedPct, percent);
-  LeftBack.spin(forward,   speedPct, percent);
-  RightFront.spin(reverse, speedPct, percent);
-  RightBack.spin(reverse,  speedPct, percent);
-  waitMs(timeMs);
-  stopDrive();
+void setupDrivetrain() {
+  Drivetrain.setDriveVelocity(DRIVE_SPEED_DEFAULT, percent);
+  Drivetrain.setTurnVelocity(TURN_SPEED_DEFAULT, percent);
+  Drivetrain.setStopping(brake);
 }
 
 
@@ -187,35 +169,31 @@ enum DetectionType { NOTHING, MINERAL, ROCK };
 int mineralsFound = 0;
 int rocksFound    = 0;
 
-// Drive in a direction while checking both sensors
-DetectionType driveScanningDirection(double speedPct, int timeMs, bool goForward) {
+// Drive forward/backward while checking both sensors
+// Uses Drivetrain.drive() so we can check sensors during movement
+DetectionType driveScanningDirection(bool goForward) {
+  Drivetrain.setDriveVelocity(DRIVE_SPEED_DEFAULT, percent);
+
   if (goForward) {
-    LeftFront.spin(forward,  speedPct, percent);
-    LeftBack.spin(forward,   speedPct, percent);
-    RightFront.spin(forward, speedPct, percent);
-    RightBack.spin(forward,  speedPct, percent);
+    Drivetrain.drive(forward);
   } else {
-    LeftFront.spin(reverse,  speedPct, percent);
-    LeftBack.spin(reverse,   speedPct, percent);
-    RightFront.spin(reverse, speedPct, percent);
-    RightBack.spin(reverse,  speedPct, percent);
+    Drivetrain.drive(reverse);
   }
 
-  int elapsed = 0;
-  while (elapsed < timeMs) {
+  // Check sensors while driving, stop after LANE_DISTANCE_IN
+  while (Drivetrain.isMoving()) {
     if (isRockDetected()) {
-      stopDrive();
+      Drivetrain.stop();
       return ROCK;
     }
     if (isMineralDetected()) {
-      stopDrive();
+      Drivetrain.stop();
       return MINERAL;
     }
     waitMs(20);
-    elapsed += 20;
   }
 
-  stopDrive();
+  Drivetrain.stop();
   return NOTHING;
 }
 
@@ -288,19 +266,21 @@ void handleRockFound() {
 // Shift over 6 inches to the next lane
 void shiftToNextLane(bool shiftRight) {
   if (shiftRight) {
-    turnRightTimed(TURN_SPEED_DEFAULT, TURN_90_TIME_MS);
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
   } else {
-    turnLeftTimed(TURN_SPEED_DEFAULT, TURN_90_TIME_MS);
+    Drivetrain.turnFor(left, TURN_90_DEGREES, degrees);
   }
   waitMs(300);
 
-  driveForwardTimed(TRAVERSE_SPEED, SHIFT_OVER_TIME_MS);
+  // Drive 6 inches sideways
+  Drivetrain.driveFor(forward, SHIFT_DISTANCE_IN, inches);
   waitMs(300);
 
+  // Turn back to face the original direction
   if (shiftRight) {
-    turnRightTimed(TURN_SPEED_DEFAULT, TURN_90_TIME_MS);
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
   } else {
-    turnLeftTimed(TURN_SPEED_DEFAULT, TURN_90_TIME_MS);
+    Drivetrain.turnFor(left, TURN_90_DEGREES, degrees);
   }
   waitMs(300);
 }
@@ -313,6 +293,7 @@ void runLawnmower() {
   mineralsFound = 0;
   rocksFound = 0;
 
+  setupDrivetrain();
   Optical10.setLight(ledState::on);
   waitMs(300);
 
@@ -324,9 +305,7 @@ void runLawnmower() {
     Brain.Screen.print("Lane %d/%d %s", lane + 1, NUM_LANES,
                        goForward ? ">>>" : "<<<");
 
-    DetectionType result = driveScanningDirection(TRAVERSE_SPEED,
-                                                  LANE_DRIVE_TIME_MS,
-                                                  goForward);
+    DetectionType result = driveScanningDirection(goForward);
 
     if (result == MINERAL) {
       handleMineralFound();
@@ -357,7 +336,7 @@ void runLawnmower() {
 /*============================================================================*/
 
 void stopEverything() {
-  stopDrive();
+  Drivetrain.stop();
   stopArm();
   stopClaw();
 }
