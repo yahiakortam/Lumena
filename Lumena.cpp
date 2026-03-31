@@ -371,7 +371,14 @@ void pre_auton(void) {
   vexcodeInit();
   clearScreen();
   printLine("Lumena");
-  printLine("Waiting for start...");
+
+  // Set starting position: claw open, arm up
+  printLine("Opening claw...");
+  clawOpenTimed(CLAW_SPEED_DEFAULT, CLAW_OPEN_TIME_MS);
+  printLine("Raising arm...");
+  armToTravelPosition();
+
+  printLine("Ready.");
 }
 
 void autonomous(void) {
