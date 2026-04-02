@@ -1,21 +1,16 @@
 #pragma region VEXcode Generated Robot Configuration
-// Make sure all required headers are included.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
 
-
 #include "vex.h"
 
 using namespace vex;
 
-// Brain should be defined by default
 brain Brain;
 
-
-// START V5 MACROS
 #define waitUntil(condition)                                                   \
   do {                                                                         \
     wait(5, msec);                                                             \
@@ -23,10 +18,7 @@ brain Brain;
 
 #define repeat(iterations)                                                     \
   for (int iterator = 0; iterator < iterations; iterator++)
-// END V5 MACROS
 
-
-// Robot configuration code.
 optical Optical7 = optical(PORT7);
 motor LeftDriveSmart = motor(PORT1, ratio18_1, false);
 motor RightDriveSmart = motor(PORT2, ratio18_1, true);
@@ -43,22 +35,14 @@ pot RoboticArm3_mJ3_pot = pot(Brain.ThreeWirePort.C);
 pot RoboticArm3_mJ4_pot = pot(Brain.ThreeWirePort.D);
 RoboticArm RoboticArm3 = RoboticArm(RoboticArm3_mJ1, RoboticArm3_mJ1_pot, RoboticArm3_mJ2, RoboticArm3_mJ2_pot, RoboticArm3_mJ3, RoboticArm3_mJ3_pot, RoboticArm3_mJ4, RoboticArm3_mJ4_pot);
 
-
-
-// generating and setting random seed
 void initializeRandomSeed(){
   int systemTime = Brain.Timer.systemHighResolution();
   double batteryCurrent = Brain.Battery.current();
   double batteryVoltage = Brain.Battery.voltage(voltageUnits::mV);
-
-  // Combine these values into a single integer
   int seed = int(batteryVoltage + batteryCurrent * 100) + systemTime;
-
-  // Set the seed
   srand(seed);
 }
 
-// Converts a color to a string
 const char* convertColorToString(color col) {
   if (col == color::red) return "red";
   else if (col == color::green) return "green";
@@ -73,69 +57,57 @@ const char* convertColorToString(color col) {
   else return "unknown";
 }
 
-
 void vexcodeInit() {
-
-  //Initializing random seed.
-  initializeRandomSeed(); 
+  initializeRandomSeed();
 }
 
-
-// Helper to make playing sounds from the V5 in VEXcode easier and
-// keeps the code cleaner by making it clear what is happening.
 void playVexcodeSound(const char *soundName) {
   printf("VEXPlaySound:%s\n", soundName);
   wait(5, msec);
 }
 
 #pragma endregion VEXcode Generated Robot Configuration
+
 /*----------------------------------------------------------------------------*/
-/*                                                                            */
 /*    Module:       main.cpp                                                  */
 /*    Author:       Team Lumena                                               */
 /*    Created:      2026                                                      */
-/*    Description:  NASA NCAS Rover Challenge – Lawnmower Traverse            */
-/*                                                                            */
+/*    Description:  NASA NCAS Rover Challenge                                 */
 /*----------------------------------------------------------------------------*/
 
-// Competition class instance
 competition Competition;
 
-
 /*============================================================================*/
-/*  TUNING CONSTANTS – TUNE ALL OF THESE ON THE REAL ROBOT                    */
+/*  TUNING CONSTANTS                                                          */
 /*============================================================================*/
 
-//--- Speed defaults (percent) ---
-const double DRIVE_SPEED_DEFAULT = 50;
-const double TURN_SPEED_DEFAULT  = 45;
+const double DRIVE_SPEED_DEFAULT       = 30;
+const double TURN_SPEED_DEFAULT        = 5;
+const double TURN_90_DEGREES           = 97.0;
 
-//--- Lawnmower traverse (MUST TUNE) ---
-const double LANE_DISTANCE_IN    = 72.0;
-const double SHIFT_DISTANCE_IN   = 6.0;
-const double TURN_90_DEGREES     = 90.0;
-const int NUM_LANES              = 12;
+const double SEG_A_IN                  = 44.0;
+const double SEG_B_IN                  = 20.0;
 
-//--- Sensor thresholds (MUST TUNE) ---
-const double MINERAL_BRIGHTNESS_THRESHOLD = 80;
-const double ROCK_DETECT_DISTANCE_IN      = 10;
+const double ROCK_DETECT_DISTANCE_MM   = 250.0;
 
-//--- Robotic arm positions (MUST TUNE on real robot) ---
-const int TRAVEL_J1 = 0;
-const int TRAVEL_J2 = 0;
-const int TRAVEL_J3 = 0;
+const int ARM_RAISE_TIME_MS            = 2000;
+const int ARM_LOWER_TIME_MS            = 5000;
+const int CLAW_OPEN_TIME_MS            = 3000;
+const int CLAW_CLOSE_TIME_MS           = 800;
 
-const int PICKUP_J1 = 45;
-const int PICKUP_J2 = 30;
-const int PICKUP_J3 = 20;
+const double ARM_RAISE_SPEED           = 20;
+const double ARM_HOLD_SPEED            = 12;
+const double ARM_LOWER_SPEED           = 20;  // actively drives arm down
+const double CLAW_MOTOR_SPEED          = 25;
 
-const int HOLD_J1 = 0;
-const int HOLD_J2 = 0;
-const int HOLD_J3 = 0;
-
-const int CLAW_OPEN_ANGLE  = 90;
-const int CLAW_CLOSED_ANGLE = 0;
-
+// Hue ranges for mineral detection (0-360 degrees)
+// Green hue: ~80-160, Yellow hue: ~40-75
+// TUNE these if detections are off
+const double YELLOW_HUE_MIN            = 40.0;
+const double YELLOW_HUE_MAX            = 75.0;
+const double GREEN_HUE_MIN             = 80.0;
+const double GREEN_HUE_MAX             = 160.0;
+const double MINERAL_BRIGHTNESS_MIN    = 10.0; // ignore readings in near-darkness
 
 /*============================================================================*/
 /*  UTILITY HELPERS                                                           */
@@ -156,17 +128,12 @@ void printLine(const char* text) {
   Brain.Screen.setCursor(screenLine, 1);
   Brain.Screen.print(text);
   screenLine++;
-  if (screenLine > 12) { screenLine = 1; }
+  if (screenLine > 12) screenLine = 1;
 }
 
-
 /*============================================================================*/
-/*  DRIVE HELPERS (using Drivetrain)                                          */
+/*  DRIVE HELPERS                                                             */
 /*============================================================================*/
-
-void stopDrive() {
-  Drivetrain.stop();
-}
 
 void setupDrivetrain() {
   Drivetrain.setDriveVelocity(DRIVE_SPEED_DEFAULT, percent);
@@ -174,201 +141,134 @@ void setupDrivetrain() {
   Drivetrain.setStopping(brake);
 }
 
-
-/*============================================================================*/
-/*  ARM & CLAW HELPERS (using RoboticArm)                                    */
-/*============================================================================*/
-
-void armToTravelPosition() {
-  RoboticArm3.moveToPositionJoint(TRAVEL_J1, TRAVEL_J2, TRAVEL_J3);
-  waitMs(1000);
-}
-
-void armToPickupPosition() {
-  RoboticArm3.moveToPositionJoint(PICKUP_J1, PICKUP_J2, PICKUP_J3);
-  waitMs(1000);
-}
-
-void armToHoldPosition() {
-  RoboticArm3.moveToPositionJoint(HOLD_J1, HOLD_J2, HOLD_J3);
-  waitMs(1000);
-}
-
-void clawOpen() {
-  RoboticArm3.setArmAngle(CLAW_OPEN_ANGLE);
-  waitMs(500);
-}
-
-void clawClose() {
-  RoboticArm3.setArmAngle(CLAW_CLOSED_ANGLE);
-  waitMs(500);
-}
-
-
 /*============================================================================*/
 /*  SENSOR DETECTION                                                          */
 /*============================================================================*/
 
 bool isMineralDetected() {
-  return (Optical7.brightness() >= MINERAL_BRIGHTNESS_THRESHOLD);
+  // Use hue values instead of color enum for more reliable detection
+  // Ignore if brightness is too low (sensor not over anything)
+  if (Optical7.brightness() < MINERAL_BRIGHTNESS_MIN) return false;
+
+  double hue = Optical7.hue();
+  bool isYellow = (hue >= YELLOW_HUE_MIN && hue <= YELLOW_HUE_MAX);
+  bool isGreen  = (hue >= GREEN_HUE_MIN  && hue <= GREEN_HUE_MAX);
+  return (isYellow || isGreen);
 }
 
 bool isRockDetected() {
-  double dist = Distance6.objectDistance(inches);
-  return (dist > 0 && dist <= ROCK_DETECT_DISTANCE_IN);
+  return (Distance6.objectDistance(mm) <= ROCK_DETECT_DISTANCE_MM);
 }
 
-
 /*============================================================================*/
-/*  LAWNMOWER TRAVERSE                                                        */
+/*  MINERAL DISPLAY                                                           */
 /*============================================================================*/
-
-enum DetectionType { NOTHING, MINERAL, ROCK };
 
 int mineralsFound = 0;
-int rocksFound    = 0;
-
-DetectionType driveScanningDirection(bool goForward) {
-  Drivetrain.setDriveVelocity(DRIVE_SPEED_DEFAULT, percent);
-
-  if (goForward) {
-    Drivetrain.drive(forward);
-  } else {
-    Drivetrain.drive(reverse);
-  }
-
-  int elapsed = 0;
-  int maxTimeMs = (int)((LANE_DISTANCE_IN / 12.0) * 1000);
-  while (elapsed < maxTimeMs) {
-    if (isRockDetected()) {
-      Drivetrain.stop();
-      return ROCK;
-    }
-    if (isMineralDetected()) {
-      Drivetrain.stop();
-      return MINERAL;
-    }
-    waitMs(20);
-    elapsed += 20;
-  }
-
-  Drivetrain.stop();
-  return NOTHING;
-}
 
 void handleMineralFound() {
   mineralsFound++;
+  Drivetrain.stop();
+
   clearScreen();
-  Brain.Screen.clearScreen(green);
-  Brain.Screen.setCursor(3, 1);
+  Brain.Screen.clearScreen(color::green);
+  Brain.Screen.setCursor(2, 1);
   Brain.Screen.setFont(mono40);
-  Brain.Screen.print("MINERAL FOUND!");
+  Brain.Screen.print("MINERAL!");
   Brain.Screen.setCursor(5, 1);
   Brain.Screen.setFont(mono20);
   Brain.Screen.print("Total: %d", mineralsFound);
   waitMs(2000);
+
   Brain.Screen.setFont(mono20);
+  Brain.Screen.clearScreen(color::black);
   clearScreen();
 }
 
-void handleRockFound() {
-  rocksFound++;
+/*============================================================================*/
+/*  ARM CONTROL                                                               */
+/*============================================================================*/
+
+bool rockGrabbed = false;
+
+void clawOpen() {
+  RoboticArm3_mJ4.spin(reverse, CLAW_MOTOR_SPEED, percent);
+  waitMs(CLAW_OPEN_TIME_MS);
+  RoboticArm3_mJ4.stop();
+}
+
+void clawClose() {
+  RoboticArm3_mJ4.spin(forward, CLAW_MOTOR_SPEED, percent);
+  waitMs(CLAW_CLOSE_TIME_MS);
+  RoboticArm3_mJ4.stop();
+}
+
+void armHoldUp() {
+  // Keep motor spinning at low speed to hold arm up against gravity
+  RoboticArm3_mJ2.spin(forward, ARM_HOLD_SPEED, percent);
+}
+
+void armRaise() {
+  RoboticArm3_mJ2.spin(forward, ARM_RAISE_SPEED, percent);
+  waitMs(ARM_RAISE_TIME_MS);
+  armHoldUp();
+}
+
+void armLower() {
+  // Actively drive arm DOWN using reverse direction
+  // If arm goes up instead, swap reverse to forward here
+  RoboticArm3_mJ2.spin(reverse, ARM_LOWER_SPEED, percent);
+  waitMs(ARM_LOWER_TIME_MS);
+  RoboticArm3_mJ2.stop();
+}
+
+void grabRock() {
   clearScreen();
-  printLine("ROCK DETECTED!");
-  Brain.Screen.setCursor(3, 1);
-  Brain.Screen.print("Rocks found: %d", rocksFound);
+  printLine("Opening claw...");
+  clawOpen();
+  waitMs(300);
 
-  printLine("Arm down...");
-  armToPickupPosition();
+  clearScreen();
+  printLine("Lowering arm...");
+  armLower();
 
+  clearScreen();
   printLine("Grabbing...");
   clawClose();
 
-  printLine("Lifting...");
-  armToHoldPosition();
+  clearScreen();
+  printLine("Raising arm...");
+  armRaise();
+
+  rockGrabbed = true;
 
   clearScreen();
+  Brain.Screen.clearScreen(color::orange);
   Brain.Screen.setCursor(3, 1);
   Brain.Screen.setFont(mono40);
-  Brain.Screen.print("ROCK HELD!");
+  Brain.Screen.print("GRABBED!");
+  waitMs(1500);
   Brain.Screen.setFont(mono20);
-  Brain.Screen.setCursor(5, 1);
-  Brain.Screen.print("Total: %d", rocksFound);
-  waitMs(5000);
-
-  printLine("Setting down...");
-  armToPickupPosition();
-
-  clawOpen();
-
-  armToTravelPosition();
-
   clearScreen();
-  printLine("Rock set down. Done.");
 }
 
-void shiftToNextLane(bool shiftRight) {
-  if (shiftRight) {
-    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
-  } else {
-    Drivetrain.turnFor(left, TURN_90_DEGREES, degrees);
-  }
-  waitMs(300);
+/*============================================================================*/
+/*  DRIVE SEGMENT                                                             */
+/*============================================================================*/
 
-  Drivetrain.driveFor(forward, SHIFT_DISTANCE_IN, inches);
-  waitMs(300);
-
-  if (shiftRight) {
-    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
-  } else {
-    Drivetrain.turnFor(left, TURN_90_DEGREES, degrees);
-  }
-  waitMs(300);
-}
-
-void runLawnmower() {
-  clearScreen();
-  printLine("== LAWNMOWER ==");
-
-  mineralsFound = 0;
-  rocksFound = 0;
-
-  setupDrivetrain();
-  Optical7.setLight(ledState::on);
-  waitMs(300);
-
-  for (int lane = 0; lane < NUM_LANES; lane++) {
-    bool goForward = (lane % 2 == 0);
-
-    Brain.Screen.setCursor(2, 1);
-    Brain.Screen.clearLine();
-    Brain.Screen.print("Lane %d/%d %s", lane + 1, NUM_LANES,
-                       goForward ? ">>>" : "<<<");
-
-    DetectionType result = driveScanningDirection(goForward);
-
-    if (result == MINERAL) {
+void driveSegment(double distanceInches) {
+  int steps = (int)(distanceInches / 1.0);
+  for (int i = 0; i < steps; i++) {
+    if (isMineralDetected()) {
       handleMineralFound();
-    } else if (result == ROCK) {
-      handleRockFound();
-      break;
     }
-
-    if (lane < NUM_LANES - 1) {
-      shiftToNextLane(goForward);
+    if (!rockGrabbed && isRockDetected()) {
+      Drivetrain.stop();
+      grabRock();
     }
+    Drivetrain.driveFor(forward, 1, inches);
   }
-
-  clearScreen();
-  printLine("== DONE ==");
-  Brain.Screen.setCursor(3, 1);
-  Brain.Screen.print("Minerals: %d", mineralsFound);
-  Brain.Screen.setCursor(4, 1);
-  Brain.Screen.print("Rocks: %d", rocksFound);
-
-  Optical7.setLight(ledState::off);
 }
-
 
 /*============================================================================*/
 /*  SAFE SHUTDOWN                                                             */
@@ -376,9 +276,8 @@ void runLawnmower() {
 
 void stopEverything() {
   Drivetrain.stop();
-  RoboticArm3.emergencyStop();
+  RoboticArm3_mJ2.stop();
 }
-
 
 /*============================================================================*/
 /*  COMPETITION CALLBACKS                                                     */
@@ -388,19 +287,52 @@ void pre_auton(void) {
   vexcodeInit();
   clearScreen();
   printLine("Lumena");
-
   printLine("Opening claw...");
   clawOpen();
-  printLine("Raising arm...");
-  armToTravelPosition();
 
-  printLine("Ready.");
+  clearScreen();
+  printLine("Lumena");
+  printLine("Raising arm...");
+  armRaise();
+
+  clearScreen();
+  printLine("Lumena");
+  printLine("Arm up. Ready.");
+
+  Optical7.setLight(ledState::on);
 }
 
 void autonomous(void) {
-  runLawnmower();
-  stopEverything();
-  printLine("Auto complete.");
+  setupDrivetrain();
+  waitMs(500);
+
+  while (true) {
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Seg 1: 44in fwd");
+    driveSegment(SEG_A_IN);
+    waitMs(300);
+
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
+    waitMs(300);
+
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Seg 2: 20in fwd");
+    driveSegment(SEG_B_IN);
+    waitMs(300);
+
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
+    waitMs(300);
+
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Seg 3: 44in fwd");
+    driveSegment(SEG_A_IN);
+    waitMs(300);
+
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
+    waitMs(300);
+    Drivetrain.turnFor(right, TURN_90_DEGREES, degrees);
+    waitMs(300);
+  }
 }
 
 void usercontrol(void) {
@@ -412,19 +344,14 @@ void usercontrol(void) {
   }
 }
 
-
 /*============================================================================*/
 /*  MAIN                                                                      */
 /*============================================================================*/
 
 int main() {
-  calibrateDrivetrain();
   pre_auton();
-
-  // Run autonomous immediately
   autonomous();
 
-  // Idle forever after
   while (true) {
     wait(100, msec);
   }
