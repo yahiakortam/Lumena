@@ -51,39 +51,44 @@ void vexcodeInit() { initializeRandomSeed(); }
 
 
 /*============================================================================*/
-/*  TUNING CONSTANTS — all magic numbers live here                            */
+/*  TUNING CONSTANTS                                                          */
 /*============================================================================*/
 
 // Speeds
-const double DRIVE_SPEED     = 30;   // percent — main driving speed
-const double TURN_SPEED      = 10;   // percent — turning speed
-const double ARM_RAISE_SPEED = 30;
-const double ARM_HOLD_SPEED  = 15;
-const double ARM_LOWER_SPEED = 20;
-const double CLAW_SPEED      = 40;
+const double DRIVE_SPEED      = 40;   // percent
+const double TURN_SPEED       = 25;   // percent — increased from 10 for faster turns
+const double RETURN_SPEED     = 50;   // percent — faster when returning to spawn (no scanning)
+const double ARM_RAISE_SPEED  = 30;
+const double ARM_HOLD_SPEED   = 15;
+const double ARM_LOWER_SPEED  = 20;
+const double CLAW_SPEED       = 40;
 
-// Lawnmower dimensions (inches)
-const double LANE_FORWARD    = 44.0;  // first lane length
-const double LANE_SHIFT      = 12.0;  // sideways shift between lanes
-const double LANE_RETURN     = 44.0;  // return lane length
+// Olympus Mons path (from spawn)
+const double OLYMPUS_LEG1     = 54.0; // inches forward from spawn
+const double OLYMPUS_LEG2     = 40.0; // inches left to reach Olympus Mons
+
+// Lawnmower dimensions
+const double LANE_LENGTH      = 54.0; // inches — same depth as Olympus leg 1
+const double LANE_SHIFT       = 12.0; // inches — sideways shift per lane
+const int    TOTAL_LANES      = 5;    // 5 lanes × 12in = 60in coverage across 72in width
 
 // Sensor thresholds
-const double ROCK_DETECT_MM  = 240.0;
-const double YELLOW_HUE_MIN  = 40.0;
-const double YELLOW_HUE_MAX  = 75.0;
-const double GREEN_HUE_MIN   = 80.0;
-const double GREEN_HUE_MAX   = 160.0;
-const double BRIGHT_MIN      = 10.0;
+const double ROCK_DETECT_MM   = 240.0;
+const double YELLOW_HUE_MIN   = 40.0;
+const double YELLOW_HUE_MAX   = 75.0;
+const double GREEN_HUE_MIN    = 80.0;
+const double GREEN_HUE_MAX    = 160.0;
+const double BRIGHT_MIN       = 10.0;
 
 // Arm/claw timing (ms)
-const int ARM_RAISE_MS       = 6000;
-const int ARM_LOWER_MS       = 5000;
-const int CLAW_OPEN_MS       = 4000;
-const int CLAW_CLOSE_MS      = 1000;
+const int ARM_RAISE_MS        = 6000;
+const int ARM_LOWER_MS        = 5000;
+const int CLAW_OPEN_MS        = 4000;
+const int CLAW_CLOSE_MS       = 1000;
 
 
 /*============================================================================*/
-/*  SMALL HELPERS                                                             */
+/*  SCREEN HELPERS                                                            */
 /*============================================================================*/
 
 int screenLine = 1;
@@ -155,10 +160,42 @@ void armLower() {
 
 
 /*============================================================================*/
-/*  MINERAL + ROCK HANDLERS                                                   */
+/*  GRAB + DROP SEQUENCES                                                     */
 /*============================================================================*/
 
-int mineralsFound = 0;
+int rocksDelivered = 0;
+int mineralsFound  = 0;
+
+void grabRock() {
+  Drivetrain.stop();
+  lcdClear(); lcdPrint("Lowering arm...");
+  armLower();
+  lcdClear(); lcdPrint("Opening claw...");
+  clawOpen();
+  wait(500, msec);
+  lcdClear(); lcdPrint("Grabbing...");
+  clawClose();
+  lcdClear(); lcdPrint("Raising arm...");
+  armRaise();
+  lcdBig("GRABBED!", color::orange);
+  wait(800, msec);
+  lcdClear();
+}
+
+void dropRock() {
+  lcdClear(); lcdPrint("Dropping rock...");
+  armLower();
+  clawOpen();
+  wait(300, msec);
+  armRaise();
+  rocksDelivered++;
+  lcdBig("DELIVERED!", color::blue);
+  Brain.Screen.setCursor(5, 1);
+  Brain.Screen.setFont(mono20);
+  Brain.Screen.print("Total: %d", rocksDelivered);
+  wait(800, msec);
+  lcdClear();
+}
 
 void handleMineral() {
   mineralsFound++;
@@ -167,43 +204,23 @@ void handleMineral() {
   Brain.Screen.setCursor(5, 1);
   Brain.Screen.setFont(mono20);
   Brain.Screen.print("Total: %d", mineralsFound);
-  wait(2000, msec);
-  lcdClear();
-}
-
-void handleRock() {
-  Drivetrain.stop();
-
-  // Lower arm to rock level FIRST, then open claw around it, then grab
-  lcdClear(); lcdPrint("Lowering arm...");
-  armLower();
-
-  lcdClear(); lcdPrint("Opening claw...");
-  clawOpen();
-  wait(500, msec);
-
-  lcdClear(); lcdPrint("Grabbing...");
-  clawClose();
-
-  lcdClear(); lcdPrint("Raising arm...");
-  armRaise();
-
-  lcdBig("GRABBED!", color::orange);
   wait(1500, msec);
   lcdClear();
 }
 
 
 /*============================================================================*/
-/*  DRIVING — straight line with continuous sensor scanning                   */
+/*  DRIVING                                                                   */
 /*============================================================================*/
 
-void driveInches(double inches) {
+// Drive forward scanning for minerals and rocks.
+// Returns true if a rock was detected and grabbed (caller should return to spawn).
+bool driveInchesScanning(double inches) {
   LeftDriveSmart.resetPosition();
-
-  double wheelCircIn = 319.19 / 25.4;          // ~12.57 inches
+  double wheelCircIn = 319.19 / 25.4;
   double targetDeg   = (inches / wheelCircIn) * 360.0;
 
+  Drivetrain.setDriveVelocity(DRIVE_SPEED, percent);
   Drivetrain.drive(forward);
 
   while (fabs(LeftDriveSmart.position(degrees)) < targetDeg) {
@@ -214,77 +231,281 @@ void driveInches(double inches) {
     }
     if (isRockDetected()) {
       Drivetrain.stop();
-      handleRock();
-      Drivetrain.drive(forward);
+      grabRock();
+      return true; // signal: need to return to spawn
     }
     wait(20, msec);
   }
 
   Drivetrain.stop();
+  return false; // no rock grabbed
+}
+
+// Drive a fixed distance at a given speed, no scanning (used for returns and shifts)
+void driveInchesBlind(double inches, double speed) {
+  LeftDriveSmart.resetPosition();
+  double wheelCircIn = 319.19 / 25.4;
+  double targetDeg   = (inches / wheelCircIn) * 360.0;
+
+  Drivetrain.setDriveVelocity(speed, percent);
+  Drivetrain.drive(forward);
+  while (fabs(LeftDriveSmart.position(degrees)) < targetDeg) {
+    wait(20, msec);
+  }
+  Drivetrain.stop();
+}
+
+void driveInchesBlindReverse(double inches, double speed) {
+  LeftDriveSmart.resetPosition();
+  double wheelCircIn = 319.19 / 25.4;
+  double targetDeg   = (inches / wheelCircIn) * 360.0;
+
+  Drivetrain.setDriveVelocity(speed, percent);
+  Drivetrain.drive(reverse);
+  while (fabs(LeftDriveSmart.position(degrees)) < targetDeg) {
+    wait(20, msec);
+  }
+  Drivetrain.stop();
 }
 
 
 /*============================================================================*/
-/*  TURNING — simple drivetrain turns                                        */
+/*  TURNS                                                                     */
 /*============================================================================*/
 
 void turnRight90() {
+  Drivetrain.setTurnVelocity(TURN_SPEED, percent);
   Drivetrain.turnFor(right, 90, degrees, true);
-  //wait(200, msec);
+  wait(150, msec);
 }
 
 void turnLeft90() {
+  Drivetrain.setTurnVelocity(TURN_SPEED, percent);
   Drivetrain.turnFor(left, 90, degrees, true);
-  // wait(200, msec);
+  wait(150, msec);
 }
 
 
 /*============================================================================*/
-/*  LAWNMOWER PATTERN                                                         */
+/*  SPAWN RETURN & RESUME                                                     */
 /*                                                                            */
-/*  Each cycle:                                                               */
-/*    1. Drive forward  44 in   (LANE_FORWARD)                                */
-/*    2. Turn right 90°                                                       */
-/*    3. Drive forward  12 in   (LANE_SHIFT)                                  */
-/*    4. Turn right 90°         → now facing back                             */
-/*    5. Drive forward  44 in   (LANE_RETURN)                                 */
-/*    6. Turn left  90°                                                       */
-/*    7. Drive forward  12 in   (LANE_SHIFT)                                  */
-/*    8. Turn left  90°         → now facing forward again                    */
-/*    9. Repeat                                                               */
+/*  Used after grabbing any rock during the lawnmower.                        */
+/*  Tracks how far into the current lane the rover was when it grabbed,       */
+/*  returns to spawn, drops, then drives back out to resume.                  */
+/*============================================================================*/
+
+// Returns to spawn from current position in a lane.
+// laneNumber: which lane we're in (0-indexed, each is 12in to the left of spawn)
+// distanceIntoLane: how far forward we drove before grabbing
+void returnToSpawnFromLane(int laneNumber, double distanceIntoLane) {
+  lcdClear(); lcdPrint("Returning to spawn...");
+
+  // Reverse back to the start of the lane
+  driveInchesBlindReverse(distanceIntoLane, RETURN_SPEED);
+
+  // Turn right to face spawn (we're currently facing forward/away from spawn)
+  turnRight90();
+
+  // Drive back across the lane shifts to reach spawn column
+  double shiftDistance = laneNumber * LANE_SHIFT;
+  if (shiftDistance > 0) {
+    driveInchesBlind(shiftDistance, RETURN_SPEED);
+  }
+
+  // Now at spawn — drop the rock
+  dropRock();
+}
+
+// After dropping, drive back out to resume the lane
+void resumeLane(int laneNumber, double distanceIntoLane) {
+  lcdClear(); lcdPrint("Resuming lane...");
+
+  // Drive back out to the lane column
+  double shiftDistance = laneNumber * LANE_SHIFT;
+  if (shiftDistance > 0) {
+    driveInchesBlindReverse(shiftDistance, RETURN_SPEED);
+  }
+
+  // Turn left to face back down the lane
+  turnLeft90();
+
+  // Drive forward to where we left off
+  driveInchesBlind(distanceIntoLane, DRIVE_SPEED);
+}
+
+
+/*============================================================================*/
+/*  OLYMPUS MONS — FIRST PRIORITY                                             */
 /*                                                                            */
+/*  From spawn (top-right corner):                                            */
+/*    1. Drive forward 54in                                                   */
+/*    2. Turn left 90°                                                        */
+/*    3. Drive forward 40in → rock in front                                   */
+/*    4. Grab                                                                 */
+/*    5. Reverse 40in                                                         */
+/*    6. Turn right 90°                                                       */
+/*    7. Reverse 54in → back at spawn                                         */
+/*    8. Drop                                                                 */
+/*============================================================================*/
+
+void grabOlympusMons() {
+  lcdClear();
+  lcdBig("OLYMPUS!", color::purple);
+  wait(800, msec);
+  lcdClear();
+  lcdPrint("Heading to Olympus Mons...");
+
+  // Leg 1 — forward 54in toward centerline
+  driveInchesBlind(OLYMPUS_LEG1, DRIVE_SPEED);
+
+  // Turn left toward Olympus Mons
+  turnLeft90();
+
+  // Leg 2 — forward 40in to rock
+  driveInchesBlind(OLYMPUS_LEG2, DRIVE_SPEED);
+
+  // Grab it
+  grabRock();
+
+  // Return — reverse 40in
+  driveInchesBlindReverse(OLYMPUS_LEG2, RETURN_SPEED);
+
+  // Turn right to face back toward spawn
+  turnRight90();
+
+  // Reverse 54in back to spawn
+  driveInchesBlindReverse(OLYMPUS_LEG1, RETURN_SPEED);
+
+  // Drop at spawn
+  dropRock();
+
+  lcdClear();
+  lcdPrint("Olympus Mons delivered!");
+}
+
+
+/*============================================================================*/
+/*  LAWNMOWER WITH SPAWN RETURNS                                              */
+/*                                                                            */
+/*  Rover starts at spawn facing forward (same direction as Olympus trip).   */
+/*  Sweeps lanes across the field width, returning to spawn for every rock.  */
 /*============================================================================*/
 
 void lawnmower() {
-  int lane = 0;
+  for (int lane = 0; lane < TOTAL_LANES; lane++) {
 
-  while (true) {
-    /* ---- Forward lane (44 in) ---- */
-    lane++;
+    lcdClear();
     Brain.Screen.setCursor(1, 1);
-    Brain.Screen.print("Lane %d  FWD 44in  ", lane);
-    driveInches(LANE_FORWARD);
-    wait(300, msec);
+    Brain.Screen.print("Lane %d / %d", lane + 1, TOTAL_LANES);
 
-    /* ---- Shift right into next lane ---- */
+    // --- Shift into this lane (all lanes except lane 0) ---
+    if (lane > 0) {
+      // From spawn, turn left and drive out one lane width
+      turnLeft90();
+      driveInchesBlind(LANE_SHIFT, DRIVE_SPEED);
+      turnRight90();
+    }
+
+    // --- Drive the lane, scanning ---
+    double distanceDriven = 0;
+    bool rockGrabbed = false;
+
+    LeftDriveSmart.resetPosition();
+    double wheelCircIn = 319.19 / 25.4;
+    double targetDeg   = (LANE_LENGTH / wheelCircIn) * 360.0;
+
+    Drivetrain.setDriveVelocity(DRIVE_SPEED, percent);
+    Drivetrain.drive(forward);
+
+    while (fabs(LeftDriveSmart.position(degrees)) < targetDeg) {
+      distanceDriven = (fabs(LeftDriveSmart.position(degrees)) / 360.0) * wheelCircIn;
+
+      if (isMineralDetected()) {
+        Drivetrain.stop();
+        handleMineral();
+        Drivetrain.drive(forward);
+      }
+
+      if (isRockDetected()) {
+        Drivetrain.stop();
+        grabRock();
+        rockGrabbed = true;
+        break;
+      }
+
+      wait(20, msec);
+    }
+
+    if (!rockGrabbed) {
+      // Finished lane with no rock — just reverse back to spawn row
+      Drivetrain.stop();
+      distanceDriven = LANE_LENGTH;
+    }
+
+    // --- Return to spawn, drop if grabbed, then come back ---
+    driveInchesBlindReverse(distanceDriven, RETURN_SPEED);
+
+    // Turn right to face spawn direction
     turnRight90();
-    driveInches(LANE_SHIFT);
-    wait(200, msec);
-    turnRight90();
 
-    /* ---- Return lane (44 in) ---- */
-    lane++;
-    Brain.Screen.setCursor(1, 1);
-    Brain.Screen.print("Lane %d  RET 44in  ", lane);
-    driveInches(LANE_RETURN);
-    wait(300, msec);
+    // Drive back to spawn column (undo all lane shifts)
+    double totalShift = lane * LANE_SHIFT;
+    if (totalShift > 0) {
+      driveInchesBlind(totalShift, RETURN_SPEED);
+    }
 
-    /* ---- Shift left into next lane ---- */
+    // At spawn — drop if we have a rock
+    if (rockGrabbed) {
+      dropRock();
+    }
+
+    // --- Go back out to resume at same lane position ---
+    if (totalShift > 0) {
+      driveInchesBlindReverse(totalShift, RETURN_SPEED);
+    }
+
+    // Turn left to face down field again
     turnLeft90();
-    driveInches(LANE_SHIFT);
-    wait(200, msec);
-    turnLeft90();
+
+    // If rock was grabbed mid-lane, finish the rest of that lane
+    if (rockGrabbed && distanceDriven < LANE_LENGTH) {
+      double remaining = LANE_LENGTH - distanceDriven;
+
+      LeftDriveSmart.resetPosition();
+      double remainDeg = (remaining / wheelCircIn) * 360.0;
+      Drivetrain.setDriveVelocity(DRIVE_SPEED, percent);
+      Drivetrain.drive(forward);
+
+      while (fabs(LeftDriveSmart.position(degrees)) < remainDeg) {
+        if (isMineralDetected()) {
+          Drivetrain.stop();
+          handleMineral();
+          Drivetrain.drive(forward);
+        }
+        if (isRockDetected()) {
+          Drivetrain.stop();
+          grabRock();
+          // Return to spawn again for this second rock
+          double d2 = (fabs(LeftDriveSmart.position(degrees)) / 360.0) * wheelCircIn;
+          driveInchesBlindReverse(distanceDriven + d2, RETURN_SPEED);
+          turnRight90();
+          if (totalShift > 0) driveInchesBlind(totalShift, RETURN_SPEED);
+          dropRock();
+          if (totalShift > 0) driveInchesBlindReverse(totalShift, RETURN_SPEED);
+          turnLeft90();
+          break;
+        }
+        wait(20, msec);
+      }
+      Drivetrain.stop();
+    }
+
+    // --- Reverse back to spawn row to prep for next lane ---
+    driveInchesBlindReverse(LANE_LENGTH, RETURN_SPEED);
   }
+
+  // All lanes done
+  lcdBig("COMPLETE!", color::green);
 }
 
 
@@ -298,7 +519,6 @@ void pre_auton() {
   lcdPrint("Lumena");
   lcdPrint("Calibrating inertial...");
 
-  // Single inertial calibration — only happens once here
   Inertial11.calibrate();
   waitUntil(!Inertial11.isCalibrating());
   lcdPrint("Inertial OK.");
@@ -307,15 +527,20 @@ void pre_auton() {
   lcdPrint("Lumena ready.");
   Optical7.setLight(ledState::on);
 
-  // Set drive speeds
   Drivetrain.setDriveVelocity(DRIVE_SPEED, percent);
   Drivetrain.setTurnVelocity(TURN_SPEED, percent);
   Drivetrain.setStopping(brake);
 }
 
 void autonomous() {
-  armHold();   // arm starts raised — just hold it in place
-  wait(500, msec);
+  armHold();        // hold arm up from the start
+  wait(300, msec);
+
+  // Phase 1 — Grab Olympus Mons immediately
+  grabOlympusMons();
+  wait(300, msec);
+
+  // Phase 2 — Lawnmower with spawn returns
   lawnmower();
 }
 
