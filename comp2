@@ -31,7 +31,8 @@ optical Optical7 = optical(PORT7);
 controller Controller1 = controller(primary);
 motor LeftDriveSmart = motor(PORT1, ratio6_1, false);
 motor RightDriveSmart = motor(PORT2, ratio6_1, true);
-drivetrain Drivetrain = drivetrain(LeftDriveSmart, RightDriveSmart, 319.19, 200, 280, mm, 1);
+inertial DrivetrainInertial = inertial(PORT11);
+smartdrive Drivetrain = smartdrive(LeftDriveSmart, RightDriveSmart, DrivetrainInertial, 319.19, 320, 280, mm, 1);
 
 distance Distance6 = distance(PORT6);
 motor RoboticArm3_mJ1 = motor(PORT3, ratio18_1, false);
@@ -59,7 +60,21 @@ void initializeRandomSeed(){
   srand(seed);
 }
 
-// Converts a color to a string
+bool vexcode_initial_drivetrain_calibration_completed = false;
+void calibrateDrivetrain() {
+  wait(200, msec);
+  Brain.Screen.print("Calibrating");
+  Brain.Screen.newLine();
+  Brain.Screen.print("Inertial");
+  DrivetrainInertial.calibrate();
+  while (DrivetrainInertial.isCalibrating()) {
+    wait(25, msec);
+  }
+  vexcode_initial_drivetrain_calibration_completed = true;
+  // Clears the screen and returns the cursor to row 1, column 1.
+  Brain.Screen.clearScreen();
+  Brain.Screen.setCursor(1, 1);
+}// Converts a color to a string
 const char* convertColorToString(color col) {
   if (col == color::red) return "red";
   else if (col == color::green) return "green";
@@ -76,6 +91,9 @@ const char* convertColorToString(color col) {
 
 
 void vexcodeInit() {
+
+  // Calibrate the Drivetrain
+  calibrateDrivetrain();
 
   //Initializing random seed.
   initializeRandomSeed(); 
@@ -102,6 +120,14 @@ int rc_auto_loop_function_Controller1() {
   // update the motors based on the input values
   while(true) {
     if(RemoteControlCodeEnabled) {
+      // stop the motors if the brain is calibrating
+      if (DrivetrainInertial.isCalibrating()) {
+        LeftDriveSmart.stop();
+        RightDriveSmart.stop();
+        while (DrivetrainInertial.isCalibrating()) {
+          wait(25, msec);
+        }
+      }
       
       // calculate the drivetrain motor velocities from the controller joystick axies
       // left = Axis3 + Axis4
@@ -363,35 +389,48 @@ void stopAllJoints() {
   RoboticArm3_mJ4.stop(hold);
 }
 
-void armDown() {
-  RoboticArm3_mJ2.spinFor(J2_DOWN, degrees, ARM_SPEED, percent, false);
-  RoboticArm3_mJ3.spinFor(J3_DOWN, degrees, ARM_SPEED, percent, false);
-  waitMs(ARM_DOWN_MS);
-  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
-}
-
 void armUp() {
-  RoboticArm3_mJ2.spinFor(J2_UP, degrees, ARM_SPEED, percent, false);
-  RoboticArm3_mJ3.spinFor(J3_UP, degrees, ARM_SPEED, percent, false);
-  waitMs(ARM_UP_MS);
-  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
+  RoboticArm3_mJ2.setVelocity(ARM_SPEED, percent);
+  RoboticArm3_mJ3.setVelocity(ARM_SPEED, percent);
+
+  RoboticArm3_mJ2.spin(reverse);
+  RoboticArm3_mJ3.spin(reverse);
+
+  wait(ARM_UP_MS, msec);
+
+  RoboticArm3_mJ2.stop(hold);
+  RoboticArm3_mJ3.stop(hold);
 }
 
 void armDrop() {
-  RoboticArm3_mJ2.spinFor(J2_DROP, degrees, ARM_SPEED, percent, false);
-  RoboticArm3_mJ3.spinFor(J3_DROP, degrees, ARM_SPEED, percent, false);
-  waitMs(ARM_DROP_MS);
-  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
+  RoboticArm3_mJ2.setVelocity(ARM_SPEED, percent);
+  RoboticArm3_mJ3.setVelocity(ARM_SPEED, percent);
+
+  RoboticArm3_mJ2.spin(forward);
+  RoboticArm3_mJ3.spin(forward);
+
+  wait(ARM_DROP_MS, msec);
+
+  RoboticArm3_mJ2.stop(hold);
+  RoboticArm3_mJ3.stop(hold);
 }
 
 void clawClose() {
-  RoboticArm3_mJ4.spinFor(CLAW_CLOSE_DEG, degrees, CLAW_SPEED, percent);
-  waitMs(CLAW_MS); RoboticArm3_mJ4.stop(hold);
+  RoboticArm3_mJ4.setVelocity(CLAW_SPEED, percent);
+  RoboticArm3_mJ4.spin(forward);
+
+  wait(CLAW_MS, msec);
+
+  RoboticArm3_mJ4.stop(hold);
 }
 
 void clawOpen() {
-  RoboticArm3_mJ4.spinFor(CLAW_OPEN_DEG, degrees, CLAW_SPEED, percent);
-  waitMs(CLAW_MS); RoboticArm3_mJ4.stop(hold);
+  RoboticArm3_mJ4.setVelocity(CLAW_SPEED, percent);
+  RoboticArm3_mJ4.spin(reverse);
+
+  wait(CLAW_MS, msec);
+
+  RoboticArm3_mJ4.stop(hold);
 }
 
 /*============================================================================*/
@@ -408,7 +447,6 @@ void grabRover(int roverNum) {
   waitMs(600);
 
   approachRover();
-  armDown();   waitMs(200);
   clawClose(); waitMs(200);
   armUp();     waitMs(300);
 
@@ -493,8 +531,8 @@ void runRoverRescue() {
 
   // Calibrate inertial sensor before starting
   printLine("Calibrating IMU...");
-  Inertial9.calibrate();
-  waitUntil(!Inertial9.isCalibrating());
+  DrivetrainInertial.calibrate();
+  waitUntil(!DrivetrainInertial.isCalibrating());
   printLine("IMU ready.");
   waitMs(500);
 
