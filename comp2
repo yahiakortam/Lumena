@@ -1,0 +1,593 @@
+#pragma region VEXcode Generated Robot Configuration
+// Make sure all required headers are included.
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+#include <string.h>
+
+
+#include "vex.h"
+
+using namespace vex;
+
+// Brain should be defined by default
+brain Brain;
+
+
+// START V5 MACROS
+#define waitUntil(condition)                                                   \
+  do {                                                                         \
+    wait(5, msec);                                                             \
+  } while (!(condition))
+
+#define repeat(iterations)                                                     \
+  for (int iterator = 0; iterator < iterations; iterator++)
+// END V5 MACROS
+
+
+// Robot configuration code.
+optical Optical7 = optical(PORT7);
+controller Controller1 = controller(primary);
+motor LeftDriveSmart = motor(PORT1, ratio6_1, false);
+motor RightDriveSmart = motor(PORT2, ratio6_1, true);
+drivetrain Drivetrain = drivetrain(LeftDriveSmart, RightDriveSmart, 319.19, 200, 280, mm, 1);
+
+distance Distance6 = distance(PORT6);
+motor RoboticArm3_mJ1 = motor(PORT3, ratio18_1, false);
+motor RoboticArm3_mJ2 = motor(PORT4, ratio18_1, true);
+motor RoboticArm3_mJ3 = motor(PORT5, ratio18_1, false);
+motor RoboticArm3_mJ4 = motor(PORT8, ratio18_1, false);
+pot RoboticArm3_mJ1_pot = pot(Brain.ThreeWirePort.A);
+pot RoboticArm3_mJ2_pot = pot(Brain.ThreeWirePort.B);
+pot RoboticArm3_mJ3_pot = pot(Brain.ThreeWirePort.C);
+pot RoboticArm3_mJ4_pot = pot(Brain.ThreeWirePort.D);
+RoboticArm RoboticArm3 = RoboticArm(RoboticArm3_mJ1, RoboticArm3_mJ1_pot, RoboticArm3_mJ2, RoboticArm3_mJ2_pot, RoboticArm3_mJ3, RoboticArm3_mJ3_pot, RoboticArm3_mJ4, RoboticArm3_mJ4_pot);
+
+
+
+// generating and setting random seed
+void initializeRandomSeed(){
+  int systemTime = Brain.Timer.systemHighResolution();
+  double batteryCurrent = Brain.Battery.current();
+  double batteryVoltage = Brain.Battery.voltage(voltageUnits::mV);
+
+  // Combine these values into a single integer
+  int seed = int(batteryVoltage + batteryCurrent * 100) + systemTime;
+
+  // Set the seed
+  srand(seed);
+}
+
+// Converts a color to a string
+const char* convertColorToString(color col) {
+  if (col == color::red) return "red";
+  else if (col == color::green) return "green";
+  else if (col == color::blue) return "blue";
+  else if (col == color::white) return "white";
+  else if (col == color::yellow) return "yellow";
+  else if (col == color::orange) return "orange";
+  else if (col == color::purple) return "purple";
+  else if (col == color::cyan) return "cyan";
+  else if (col == color::black) return "black";
+  else if (col == color::transparent) return "transparent";
+  else return "unknown";
+}
+
+
+void vexcodeInit() {
+
+  //Initializing random seed.
+  initializeRandomSeed(); 
+}
+
+
+// Helper to make playing sounds from the V5 in VEXcode easier and
+// keeps the code cleaner by making it clear what is happening.
+void playVexcodeSound(const char *soundName) {
+  printf("VEXPlaySound:%s\n", soundName);
+  wait(5, msec);
+}
+
+
+
+// define variable for remote controller enable/disable
+bool RemoteControlCodeEnabled = true;
+// define variables used for controlling motors based on controller inputs
+bool DrivetrainNeedsToBeStopped_Controller1 = true;
+
+// define a task that will handle monitoring inputs from Controller1
+int rc_auto_loop_function_Controller1() {
+  // process the controller input every 20 milliseconds
+  // update the motors based on the input values
+  while(true) {
+    if(RemoteControlCodeEnabled) {
+      
+      // calculate the drivetrain motor velocities from the controller joystick axies
+      // left = Axis3 + Axis4
+      // right = Axis3 - Axis4
+      int drivetrainLeftSideSpeed = Controller1.Axis3.position() + Controller1.Axis4.position();
+      int drivetrainRightSideSpeed = Controller1.Axis3.position() - Controller1.Axis4.position();
+      
+      // check if the values are inside of the deadband range
+      if (abs(drivetrainLeftSideSpeed) < 5 && abs(drivetrainRightSideSpeed) < 5) {
+        // check if the motors have already been stopped
+        if (DrivetrainNeedsToBeStopped_Controller1) {
+          // stop the drive motors
+          LeftDriveSmart.stop();
+          RightDriveSmart.stop();
+          // tell the code that the motors have been stopped
+          DrivetrainNeedsToBeStopped_Controller1 = false;
+        }
+      } else {
+        // reset the toggle so that the deadband code knows to stop the motors next time the input is in the deadband range
+        DrivetrainNeedsToBeStopped_Controller1 = true;
+      }
+      
+      // only tell the left drive motor to spin if the values are not in the deadband range
+      if (DrivetrainNeedsToBeStopped_Controller1) {
+        LeftDriveSmart.setVelocity(drivetrainLeftSideSpeed, percent);
+        LeftDriveSmart.spin(forward);
+      }
+      // only tell the right drive motor to spin if the values are not in the deadband range
+      if (DrivetrainNeedsToBeStopped_Controller1) {
+        RightDriveSmart.setVelocity(drivetrainRightSideSpeed, percent);
+        RightDriveSmart.spin(forward);
+      }
+    }
+    // wait before repeating the process
+    wait(20, msec);
+  }
+  return 0;
+}
+
+task rc_auto_loop_task_Controller1(rc_auto_loop_function_Controller1);
+
+#pragma endregion VEXcode Generated Robot Configuration
+
+/*----------------------------------------------------------------------------*/
+/*    Module:       main.cpp                                                  */
+/*    Author:       Team Lumena                                               */
+/*    Created:      2026                                                      */
+/*    Description:  NASA NCAS – Rover Rescue                                  */
+/*                  Hardcoded paths to 4 stranded rovers                      */
+/*                  Order: R1 (far left) → R2 (far right) →                  */
+/*                         R3 (rock left) → R4 (rock right)                  */
+/*----------------------------------------------------------------------------*/
+
+#include "vex.h"
+using namespace vex;
+
+competition Competition;
+
+/*============================================================================*/
+/*  TUNING CONSTANTS                                                          */
+/*============================================================================*/
+
+//--- Speeds ---
+const double DRIVE_SPEED  = 25;
+const double TOW_SPEED    = 15;   // slower when carrying a rover
+const double TURN_SPEED   = 15;   // used for inertial-guided turns
+
+//--- Arm speeds / timing (TUNE ON REAL ROBOT) ---
+const double ARM_SPEED    = 40;
+const int    ARM_DOWN_MS  = 700;
+const int    ARM_UP_MS    = 700;
+const int    ARM_DROP_MS  = 600;
+const double CLAW_CLOSE_DEG = 180.0;
+const double CLAW_OPEN_DEG  = -180.0;
+const double CLAW_SPEED     = 40.0;
+const int    CLAW_MS        = 500;
+
+//--- Arm joint travel (degrees) TUNE ON REAL ROBOT ---
+// Positive = forward spin, negative = reverse
+const double J2_DOWN = 90.0;   // shoulder down to pick up
+const double J3_DOWN = 60.0;   // elbow down to pick up
+const double J2_UP   = -90.0;  // raise shoulder
+const double J3_UP   = -60.0;  // raise elbow
+const double J2_DROP = 45.0;   // partial lower for drop-off
+const double J3_DROP = 30.0;
+
+//--- Distance sensor threshold ---
+const double ROVER_DETECT_IN = 8.0;  // inches — stop and grab when this close
+
+//--- Inertial turn tolerance ---
+const double TURN_TOLERANCE_DEG = 10; // degrees — stop turning within this
+
+//--- Hardcoded rover positions (inches from start, each tile = 24") ---
+// All measured from the bottom-left start corner.
+// fwd = how far forward (into the field)
+// right = how far right from start column
+//
+// ROVER 1: far left,  ~1 tile right, ~4 tiles up
+const double R1_FWD   = 6.0;
+const double R1_RIGHT = 30.0;
+
+// ROVER 2: far right, ~5 tiles right, ~4 tiles up
+const double R2_FWD   = 96.0;
+const double R2_RIGHT = 36.0;
+
+// ROVER 3: on rock formation, left rover, ~3 tiles right, ~3 tiles up
+const double R3_FWD   = 72.0;
+const double R3_RIGHT = 60.0;
+
+// ROVER 4: on rock formation, right rover, ~3.5 tiles right, ~3 tiles up
+const double R4_FWD   = 72.0;
+const double R4_RIGHT = 72.0;
+
+//--- Mineral detection ---
+const double MINERAL_BRIGHT_MIN = 50;
+const double YELLOW_HUE_MIN = 45;  const double YELLOW_HUE_MAX = 75;
+const double RED_HUE_MIN    = 0;   const double RED_HUE_MAX    = 20;
+const double RED_HUE_MIN2   = 340; const double RED_HUE_MAX2   = 359;
+const double GREEN_HUE_MIN  = 85;  const double GREEN_HUE_MAX  = 150;
+
+/*============================================================================*/
+/*  UTILITY                                                                   */
+/*============================================================================*/
+
+void waitMs(int ms) { wait(ms, msec); }
+
+int  screenLine = 1;
+int  mineralsFound = 0;
+int  roversRescued = 0;
+
+void clearScreen() { Brain.Screen.clearScreen(); screenLine = 1; }
+
+void printLine(const char* t) {
+  Brain.Screen.setCursor(screenLine, 1);
+  Brain.Screen.print(t);
+  if (++screenLine > 12) screenLine = 1;
+}
+
+/*============================================================================*/
+/*  MINERAL DETECTION (optical sensor — yellow, red, green tape)             */
+/*============================================================================*/
+
+bool isMineralDetected() {
+  double hue   = Optical7.hue();
+  double bright = Optical7.brightness();
+  if (bright < MINERAL_BRIGHT_MIN) return false;
+  bool yellow = (hue >= YELLOW_HUE_MIN && hue <= YELLOW_HUE_MAX);
+  bool red    = (hue >= RED_HUE_MIN  && hue <= RED_HUE_MAX) ||
+                (hue >= RED_HUE_MIN2 && hue <= RED_HUE_MAX2);
+  bool green  = (hue >= GREEN_HUE_MIN && hue <= GREEN_HUE_MAX);
+  return yellow || red || green;
+}
+
+const char* getMineralColor() {
+  double hue = Optical7.hue();
+  if (hue >= YELLOW_HUE_MIN && hue <= YELLOW_HUE_MAX) return "YELLOW";
+  if ((hue >= RED_HUE_MIN && hue <= RED_HUE_MAX) ||
+      (hue >= RED_HUE_MIN2 && hue <= RED_HUE_MAX2)) return "RED";
+  return "GREEN";
+}
+
+void logMineral() {
+  mineralsFound++;
+  Brain.Screen.clearScreen(green);
+  Brain.Screen.setCursor(2, 1); Brain.Screen.setFont(mono40);
+  Brain.Screen.print("MINERAL!");
+  Brain.Screen.setCursor(4, 1); Brain.Screen.setFont(mono20);
+  Brain.Screen.print("%s tape #%d", getMineralColor(), mineralsFound);
+  waitMs(1200);
+  Brain.Screen.setFont(mono20);
+  clearScreen();
+}
+
+/*============================================================================*/
+/*  INERTIAL-GUIDED TURNS                                                     */
+/*============================================================================*/
+
+// Turn to an absolute heading using the inertial sensor.
+// heading: 0=forward, 90=right, 180=back, 270=left
+void turnToHeading(double targetHeading) {
+  Drivetrain.setTurnVelocity(TURN_SPEED, percent);
+
+  while (true) {
+    double current = Inertial9.heading(degrees);
+    double error   = targetHeading - current;
+
+    // Normalize to -180..180
+    while (error >  180) error -= 360;
+    while (error < -180) error += 360;
+
+    if (fabs(error) <= TURN_TOLERANCE_DEG) break;
+
+    if (error > 0) {
+      LeftDriveSmart.spin(forward,  TURN_SPEED, percent);
+      RightDriveSmart.spin(reverse, TURN_SPEED, percent);
+    } else {
+      LeftDriveSmart.spin(reverse, TURN_SPEED, percent);
+      RightDriveSmart.spin(forward, TURN_SPEED, percent);
+    }
+    wait(10, msec);
+  }
+
+  LeftDriveSmart.stop(brake);
+  RightDriveSmart.stop(brake);
+  waitMs(150);
+}
+
+/*============================================================================*/
+/*  DRIVE HELPERS                                                             */
+/*============================================================================*/
+
+void setupDrivetrain() {
+  Drivetrain.setDriveVelocity(DRIVE_SPEED, percent);
+  Drivetrain.setTurnVelocity(TURN_SPEED, percent);
+  Drivetrain.setStopping(brake);
+}
+
+// Drive forward at given speed, polling mineral sensor every 20ms
+void driveForwardScanning(double inches, double speed) {
+  Drivetrain.setDriveVelocity(speed, percent);
+  Drivetrain.driveFor(forward, inches, distanceUnits::in, false); // non-blocking
+
+  bool mineralLogged = false;
+  while (Drivetrain.isMoving()) {
+    if (isMineralDetected() && !mineralLogged) {
+      Drivetrain.stop();
+      logMineral();
+      mineralLogged = true;
+      Drivetrain.setDriveVelocity(speed, percent);
+      Drivetrain.driveFor(forward, inches, distanceUnits::in, false);
+    } else if (!isMineralDetected()) {
+      mineralLogged = false;
+    }
+    wait(20, msec);
+  }
+  Drivetrain.stop();
+}
+
+// Creep forward until distance sensor sees the stranded rover
+void approachRover() {
+  Drivetrain.setDriveVelocity(25, percent);
+  while (Distance6.objectDistance(inches) > ROVER_DETECT_IN ||
+         Distance6.objectDistance(inches) <= 0) {
+    Drivetrain.drive(forward);
+    wait(20, msec);
+  }
+  Drivetrain.stop();
+  waitMs(200);
+}
+
+/*============================================================================*/
+/*  ARM & CLAW                                                                */
+/*============================================================================*/
+
+void stopAllJoints() {
+  RoboticArm3_mJ1.stop(hold);
+  RoboticArm3_mJ2.stop(hold);
+  RoboticArm3_mJ3.stop(hold);
+  RoboticArm3_mJ4.stop(hold);
+}
+
+void armDown() {
+  RoboticArm3_mJ2.spinFor(J2_DOWN, degrees, ARM_SPEED, percent, false);
+  RoboticArm3_mJ3.spinFor(J3_DOWN, degrees, ARM_SPEED, percent, false);
+  waitMs(ARM_DOWN_MS);
+  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
+}
+
+void armUp() {
+  RoboticArm3_mJ2.spinFor(J2_UP, degrees, ARM_SPEED, percent, false);
+  RoboticArm3_mJ3.spinFor(J3_UP, degrees, ARM_SPEED, percent, false);
+  waitMs(ARM_UP_MS);
+  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
+}
+
+void armDrop() {
+  RoboticArm3_mJ2.spinFor(J2_DROP, degrees, ARM_SPEED, percent, false);
+  RoboticArm3_mJ3.spinFor(J3_DROP, degrees, ARM_SPEED, percent, false);
+  waitMs(ARM_DROP_MS);
+  RoboticArm3_mJ2.stop(hold); RoboticArm3_mJ3.stop(hold);
+}
+
+void clawClose() {
+  RoboticArm3_mJ4.spinFor(CLAW_CLOSE_DEG, degrees, CLAW_SPEED, percent);
+  waitMs(CLAW_MS); RoboticArm3_mJ4.stop(hold);
+}
+
+void clawOpen() {
+  RoboticArm3_mJ4.spinFor(CLAW_OPEN_DEG, degrees, CLAW_SPEED, percent);
+  waitMs(CLAW_MS); RoboticArm3_mJ4.stop(hold);
+}
+
+/*============================================================================*/
+/*  GRAB & DROP SEQUENCES                                                     */
+/*============================================================================*/
+
+void grabRover(int roverNum) {
+  Brain.Screen.clearScreen(red);
+  Brain.Screen.setCursor(2, 1); Brain.Screen.setFont(mono40);
+  Brain.Screen.print("ROVER %d!", roverNum);
+  Brain.Screen.setCursor(4, 1); Brain.Screen.setFont(mono20);
+  Brain.Screen.print("Grabbing...");
+  Brain.Screen.setFont(mono20);
+  waitMs(600);
+
+  approachRover();
+  armDown();   waitMs(200);
+  clawClose(); waitMs(200);
+  armUp();     waitMs(300);
+
+  roversRescued++;
+  clearScreen();
+  printLine("Rover secured!");
+}
+
+void dropRover() {
+  printLine("Dropping rover...");
+  armDrop();   waitMs(200);
+  clawOpen();  waitMs(200);
+  armUp();     waitMs(300);
+
+  Brain.Screen.clearScreen(blue);
+  Brain.Screen.setCursor(3, 1); Brain.Screen.setFont(mono40);
+  Brain.Screen.print("DELIVERED!");
+  Brain.Screen.setFont(mono20);
+  waitMs(1200);
+  clearScreen();
+}
+
+/*============================================================================*/
+/*  CORE NAVIGATION PRIMITIVE                                                  */
+/*                                                                            */
+/*  goTo(fwd, right):                                                         */
+/*    1. Face forward (heading 0), drive fwd inches — scanning for minerals  */
+/*    2. Turn right (heading 90), drive right inches                         */
+/*    Uses inertial sensor for accurate turns.                                */
+/*============================================================================*/
+
+void goTo(double fwdInches, double rightInches) {
+  // Step 1: face forward and drive up the field
+  turnToHeading(0);
+  driveForwardScanning(fwdInches, DRIVE_SPEED);
+  waitMs(200);
+
+  // Step 2: turn right and strafe to target column
+  if (rightInches > 0) {
+    turnToHeading(90);
+    driveForwardScanning(rightInches, DRIVE_SPEED);
+    waitMs(200);
+  }
+}
+
+// Return straight to start from anywhere on the field.
+// Reverses the goTo path: left first, then back down.
+void returnToStart(double fwdInches, double rightInches) {
+  printLine("Returning...");
+  Drivetrain.setDriveVelocity(TOW_SPEED, percent);
+
+  // Step 1: turn left (heading 270) and drive back to column 0
+  if (rightInches > 0) {
+    turnToHeading(270);
+    Drivetrain.driveFor(forward, rightInches, distanceUnits::in);
+    waitMs(200);
+  }
+
+  // Step 2: face south (heading 180) and drive back to start
+  turnToHeading(180);
+  Drivetrain.driveFor(forward, fwdInches, distanceUnits::in);
+  waitMs(200);
+
+  // Face forward again, ready for next mission
+  turnToHeading(0);
+  printLine("At start.");
+}
+
+/*============================================================================*/
+/*  MAIN MISSION — 4 HARDCODED ROVER RESCUES                                 */
+/*============================================================================*/
+
+void runRoverRescue() {
+  clearScreen();
+  printLine("== ROVER RESCUE ==");
+  mineralsFound = 0;
+  roversRescued = 0;
+
+  setupDrivetrain();
+  Optical7.setLight(ledState::on);
+  Optical7.setLightPower(100, percent);
+
+  // Calibrate inertial sensor before starting
+  printLine("Calibrating IMU...");
+  Inertial9.calibrate();
+  waitUntil(!Inertial9.isCalibrating());
+  printLine("IMU ready.");
+  waitMs(500);
+
+  // ── ROVER 1: far left (column 1, row 4) ─────────────────────────────────
+  Brain.Screen.clearScreen();
+  Brain.Screen.setCursor(1,1); Brain.Screen.print("=== Rover 1 (far left) ===");
+  goTo(R1_FWD, R1_RIGHT);
+  grabRover(1);
+  returnToStart(R1_FWD, R1_RIGHT);
+  dropRover();
+  waitMs(500);
+
+  // ── ROVER 2: far right (column 5, row 4) ────────────────────────────────
+  Brain.Screen.clearScreen();
+  Brain.Screen.setCursor(1,1); Brain.Screen.print("=== Rover 2 (far right) ===");
+  goTo(R2_FWD, R2_RIGHT);
+  grabRover(2);
+  returnToStart(R2_FWD, R2_RIGHT);
+  dropRover();
+  waitMs(500);
+
+  // ── ROVER 3: rock formation, left rover ─────────────────────────────────
+  Brain.Screen.clearScreen();
+  Brain.Screen.setCursor(1,1); Brain.Screen.print("=== Rover 3 (rock left) ===");
+  goTo(R3_FWD, R3_RIGHT);
+  grabRover(3);
+  returnToStart(R3_FWD, R3_RIGHT);
+  dropRover();
+  waitMs(500);
+
+  // ── ROVER 4: rock formation, right rover ────────────────────────────────
+  Brain.Screen.clearScreen();
+  Brain.Screen.setCursor(1,1); Brain.Screen.print("=== Rover 4 (rock right) ===");
+  goTo(R4_FWD, R4_RIGHT);
+  grabRover(4);
+  returnToStart(R4_FWD, R4_RIGHT);
+  dropRover();
+
+  // ── MISSION COMPLETE ────────────────────────────────────────────────────
+  Optical7.setLight(ledState::off);
+  Brain.Screen.clearScreen(blue);
+  Brain.Screen.setCursor(2, 1); Brain.Screen.setFont(mono40);
+  Brain.Screen.print("MISSION");
+  Brain.Screen.setCursor(3, 1);
+  Brain.Screen.print("COMPLETE!");
+  Brain.Screen.setCursor(5, 1); Brain.Screen.setFont(mono20);
+  Brain.Screen.print("Rescued:  %d/4", roversRescued);
+  Brain.Screen.setCursor(6, 1);
+  Brain.Screen.print("Minerals: %d",   mineralsFound);
+}
+
+/*============================================================================*/
+/*  SAFE SHUTDOWN                                                             */
+/*============================================================================*/
+
+void stopEverything() {
+  Drivetrain.stop();
+  stopAllJoints();
+  Optical7.setLight(ledState::off);
+}
+
+/*============================================================================*/
+/*  COMPETITION CALLBACKS                                                     */
+/*============================================================================*/
+
+void pre_auton(void) {
+  vexcodeInit();
+  clearScreen();
+  printLine("Team Lumena");
+  printLine("Rover Rescue");
+  clawOpen();
+  armUp();
+  printLine("Ready.");
+}
+
+void autonomous(void) {
+  runRoverRescue();
+  stopEverything();
+}
+
+void usercontrol(void) {
+  clearScreen();
+  printLine("Driver Control");
+  while (true) { wait(20, msec); }
+}
+
+/*============================================================================*/
+/*  MAIN                                                                      */
+/*============================================================================*/
+
+int main() {
+  pre_auton();
+  Competition.autonomous(autonomous);
+  Competition.drivercontrol(usercontrol);
+  while (true) { wait(100, msec); }
+}
