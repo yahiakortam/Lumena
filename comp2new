@@ -2,23 +2,18 @@
 /*  VEXcode Generated Robot Configuration                                     */
 /*============================================================================*/
 #pragma region VEXcode Generated Robot Configuration
-// Make sure all required headers are included.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
 
-
 #include "vex.h"
 
 using namespace vex;
 
-// Brain should be defined by default
 brain Brain;
 
-
-// START V5 MACROS
 #define waitUntil(condition)                                                   \
   do {                                                                         \
     wait(5, msec);                                                             \
@@ -26,17 +21,13 @@ brain Brain;
 
 #define repeat(iterations)                                                     \
   for (int iterator = 0; iterator < iterations; iterator++)
-// END V5 MACROS
 
-
-// Robot configuration code.
 optical Optical7 = optical(PORT7);
 controller Controller1 = controller(primary);
 motor LeftDriveSmart = motor(PORT1, ratio18_1, false);
 motor RightDriveSmart = motor(PORT2, ratio18_1, true);
 inertial DrivetrainInertial = inertial(PORT11);
 smartdrive Drivetrain = smartdrive(LeftDriveSmart, RightDriveSmart, DrivetrainInertial, 319.19, 320, 280, mm, 1);
-
 distance Distance6 = distance(PORT6);
 motor RoboticArm3_mJ1 = motor(PORT3, ratio18_1, false);
 motor RoboticArm3_mJ2 = motor(PORT4, ratio18_1, true);
@@ -48,18 +39,11 @@ pot RoboticArm3_mJ3_pot = pot(Brain.ThreeWirePort.C);
 pot RoboticArm3_mJ4_pot = pot(Brain.ThreeWirePort.D);
 RoboticArm RoboticArm3 = RoboticArm(RoboticArm3_mJ1, RoboticArm3_mJ1_pot, RoboticArm3_mJ2, RoboticArm3_mJ2_pot, RoboticArm3_mJ3, RoboticArm3_mJ3_pot, RoboticArm3_mJ4, RoboticArm3_mJ4_pot);
 
-
-
-// generating and setting random seed
 void initializeRandomSeed(){
   int systemTime = Brain.Timer.systemHighResolution();
   double batteryCurrent = Brain.Battery.current();
   double batteryVoltage = Brain.Battery.voltage(voltageUnits::mV);
-
-  // Combine these values into a single integer
   int seed = int(batteryVoltage + batteryCurrent * 100) + systemTime;
-
-  // Set the seed
   srand(seed);
 }
 
@@ -74,10 +58,10 @@ void calibrateDrivetrain() {
     wait(25, msec);
   }
   vexcode_initial_drivetrain_calibration_completed = true;
-  // Clears the screen and returns the cursor to row 1, column 1.
   Brain.Screen.clearScreen();
   Brain.Screen.setCursor(1, 1);
-}// Converts a color to a string
+}
+
 const char* convertColorToString(color col) {
   if (col == color::red) return "red";
   else if (col == color::green) return "green";
@@ -92,38 +76,22 @@ const char* convertColorToString(color col) {
   else return "unknown";
 }
 
-
 void vexcodeInit() {
-
-  // Calibrate the Drivetrain
   calibrateDrivetrain();
-
-  //Initializing random seed.
-  initializeRandomSeed(); 
+  initializeRandomSeed();
 }
 
-
-// Helper to make playing sounds from the V5 in VEXcode easier and
-// keeps the code cleaner by making it clear what is happening.
 void playVexcodeSound(const char *soundName) {
   printf("VEXPlaySound:%s\n", soundName);
   wait(5, msec);
 }
 
-
-
-// define variable for remote controller enable/disable
 bool RemoteControlCodeEnabled = true;
-// define variables used for controlling motors based on controller inputs
 bool DrivetrainNeedsToBeStopped_Controller1 = true;
 
-// define a task that will handle monitoring inputs from Controller1
 int rc_auto_loop_function_Controller1() {
-  // process the controller input every 20 milliseconds
-  // update the motors based on the input values
   while(true) {
     if(RemoteControlCodeEnabled) {
-      // stop the motors if the brain is calibrating
       if (DrivetrainInertial.isCalibrating()) {
         LeftDriveSmart.stop();
         RightDriveSmart.stop();
@@ -131,40 +99,26 @@ int rc_auto_loop_function_Controller1() {
           wait(25, msec);
         }
       }
-      
-      // calculate the drivetrain motor velocities from the controller joystick axies
-      // left = Axis3 + Axis4
-      // right = Axis3 - Axis4
-      int drivetrainLeftSideSpeed = Controller1.Axis3.position() + Controller1.Axis4.position();
+      int drivetrainLeftSideSpeed  = Controller1.Axis3.position() + Controller1.Axis4.position();
       int drivetrainRightSideSpeed = Controller1.Axis3.position() - Controller1.Axis4.position();
-      
-      // check if the values are inside of the deadband range
       if (abs(drivetrainLeftSideSpeed) < 5 && abs(drivetrainRightSideSpeed) < 5) {
-        // check if the motors have already been stopped
         if (DrivetrainNeedsToBeStopped_Controller1) {
-          // stop the drive motors
           LeftDriveSmart.stop();
           RightDriveSmart.stop();
-          // tell the code that the motors have been stopped
           DrivetrainNeedsToBeStopped_Controller1 = false;
         }
       } else {
-        // reset the toggle so that the deadband code knows to stop the motors next time the input is in the deadband range
         DrivetrainNeedsToBeStopped_Controller1 = true;
       }
-      
-      // only tell the left drive motor to spin if the values are not in the deadband range
       if (DrivetrainNeedsToBeStopped_Controller1) {
         LeftDriveSmart.setVelocity(drivetrainLeftSideSpeed, percent);
         LeftDriveSmart.spin(forward);
       }
-      // only tell the right drive motor to spin if the values are not in the deadband range
       if (DrivetrainNeedsToBeStopped_Controller1) {
         RightDriveSmart.setVelocity(drivetrainRightSideSpeed, percent);
         RightDriveSmart.spin(forward);
       }
     }
-    // wait before repeating the process
     wait(20, msec);
   }
   return 0;
@@ -186,8 +140,8 @@ const double WHEEL_CIRC_IN       = 319.19 / 25.4;
 const double TURN_90_TARGET      = 85.0;
 
 const int    ARM_RAISE_MS        = 1500;
-const int    ARM_LOWER_MS        = 1500;   // full lower for pickup
-const int    ARM_LOWER_SMALL_MS  = 400;    // small lower (~4 inches) for drop -- TUNE THIS
+const int    ARM_LOWER_MS        = 1500;
+const int    ARM_LOWER_SMALL_MS  = 400;
 const double ARM_SPEED           = 25.0;
 const int    CLAW_OPEN_MS        = 1000;
 const int    CLAW_CLOSE_MS       = 1000;
@@ -195,6 +149,66 @@ const double CLAW_SPEED          = 30.0;
 
 const int    ARM_DIR             = 1;
 const int    CLAW_DIR            = -1;
+
+// Mineral detection thresholds -- TUNE IF NEEDED
+const double BRIGHT_MIN          = 10.0;   // ignore sensor if too dark
+const double RED_HUE_MAX         = 20.0;   // red wraps near 0
+const double RED_HUE_WRAP        = 340.0;  // and near 360
+const double YELLOW_HUE_MIN      = 21.0;
+const double YELLOW_HUE_MAX      = 75.0;
+const double GREEN_HUE_MIN       = 76.0;
+const double GREEN_HUE_MAX       = 160.0;
+const int    MINERAL_COOLDOWN_MS = 1500;   // ms before re-triggering same mineral
+
+/*============================================================================*/
+/*  MINERAL DETECTION — BACKGROUND TASK                                       */
+/*  Runs the entire match. Checks optical sensor every 50ms.                  */
+/*  Writes to bottom rows of screen only — never stops movement.              */
+/*============================================================================*/
+
+int  g_mineralsFound    = 0;
+bool g_mineralActive    = false;  // true while tape is still under sensor
+const char* g_lastColor = "---";
+int  g_lastMineralTime  = -99999;
+
+int mineralMonitorTask() {
+  Optical7.setLight(ledState::on);
+  Optical7.setLightPower(100, pct);
+
+  while (true) {
+    int now = (int)(Brain.Timer.value() * 1000);
+
+    if (Optical7.brightness() >= BRIGHT_MIN &&
+        (now - g_lastMineralTime) >= MINERAL_COOLDOWN_MS) {
+
+      double hue = Optical7.hue();
+      const char* detected = nullptr;
+
+      if (hue <= RED_HUE_MAX || hue >= RED_HUE_WRAP) {
+        detected = "RED";
+      } else if (hue >= YELLOW_HUE_MIN && hue <= YELLOW_HUE_MAX) {
+        detected = "YELLOW";
+      } else if (hue >= GREEN_HUE_MIN && hue <= GREEN_HUE_MAX) {
+        detected = "GREEN";
+      }
+
+      if (detected != nullptr) {
+        g_mineralsFound++;
+        g_lastColor      = detected;
+        g_lastMineralTime = now;
+
+        // Write to bottom 3 rows — doesn't clear the whole screen
+        Brain.Screen.setCursor(10, 1);
+        Brain.Screen.print("!! MINERAL: %-6s !!", detected);
+        Brain.Screen.setCursor(11, 1);
+        Brain.Screen.print("Total minerals: %d  ", g_mineralsFound);
+      }
+    }
+
+    wait(50, msec);
+  }
+  return 0;
+}
 
 /*============================================================================*/
 /*  SCREEN HELPERS                                                            */
@@ -210,7 +224,7 @@ void lcdClear() {
 void lcdPrint(const char* text) {
   Brain.Screen.setCursor(screenLine++, 1);
   Brain.Screen.print(text);
-  if (screenLine > 12) screenLine = 1;
+  if (screenLine > 9) screenLine = 1;  // stay in top 9 rows, leave 10-11 for minerals
 }
 
 /*============================================================================*/
@@ -264,22 +278,16 @@ void turnLeftDeg(double target) {
   RightDriveSmart.stop(brake);
   wait(500, msec);
 }
+
 void turnRightDeg(double target) {
   DrivetrainInertial.resetRotation();
-  
   LeftDriveSmart.spin(forward, TURN_PCT, percent);
   RightDriveSmart.spin(reverse, TURN_PCT, percent);
-  
-  // Main turning loop - stop when rotation reaches target
   while (fabs(DrivetrainInertial.rotation(deg)) < target - 5.0) {
     wait(10, msec);
   }
-  
-  // Stop motors immediately
   LeftDriveSmart.stop(brake);
   RightDriveSmart.stop(brake);
-  
-  // Brief settling time
   wait(500, msec);
 }
 
@@ -306,7 +314,6 @@ void armRaise() {
   RoboticArm3_mJ2.stop(hold);
 }
 
-// Full lower — used during pickup to reach the ground
 void armLower() {
   directionType dir = (ARM_DIR > 0) ? reverse : forward;
   RoboticArm3_mJ2.spin(dir, ARM_SPEED, percent);
@@ -314,7 +321,6 @@ void armLower() {
   RoboticArm3_mJ2.stop(hold);
 }
 
-// Small lower (~4 inches) — used during drop so rover is gently released
 void armLowerSmall() {
   directionType dir = (ARM_DIR > 0) ? reverse : forward;
   RoboticArm3_mJ2.spin(dir, ARM_SPEED, percent);
@@ -341,7 +347,7 @@ void clawClose() {
 
 void pickupRover() {
   lcdClear(); lcdPrint("Lowering arm...");
-  armLower();            // full lower to reach ground
+  armLower();
   wait(200, msec);
 
   lcdClear(); lcdPrint("Opening claw...");
@@ -363,7 +369,7 @@ void dropRover() {
   wait(200, msec);
 
   lcdClear(); lcdPrint("Lowering arm...");
-  armLowerSmall();       // small lower (~4 inches) — gentle release
+  armLowerSmall();
   wait(200, msec);
 
   lcdClear(); lcdPrint("Opening claw...");
@@ -383,9 +389,6 @@ void pre_auton() {
   vexcodeInit();
   lcdClear();
   lcdPrint("Lumena - Mini Test");
-  lcdPrint("Calibrating inertial...");
-  DrivetrainInertial.calibrate();
-  waitUntil(!DrivetrainInertial.isCalibrating());
   lcdPrint("Inertial OK.");
 
   Drivetrain.setStopping(brake);
@@ -397,44 +400,55 @@ void pre_auton() {
 }
 
 void autonomous() {
+  // Start mineral monitor running in background
+  task mineralTask(mineralMonitorTask);
+
   lcdClear();
 
-  // 1. Drive forward 32 inches
-  lcdPrint("Step 1: Forward 63in");
+  // --- Rover 1 ---
+  lcdPrint("Step 1: Forward 32in");
   driveForwardInches(32);
-  // 2. Turn right 30 degrees
-  lcdPrint("Step 2: Turn right 90");
+
+  lcdPrint("Step 2: Turn right 30");
   turnRightDeg(30);
-  // 3. Drive forward 5 inches to rover
+
+  lcdPrint("Step 3: Forward 7in");
   driveForwardInches(7);
-  // 4. Pick up rover
+
+  lcdPrint("Step 4: Pickup rover");
   pickupRover();
-  // drive 4 inches forard
+
   driveForwardInches(3);
-  // turn right 60 degrees
   turnRightDeg(60);
-  // turn right 90 degrees
   turnRightDeg(85);
   driveForwardInches(30);
-  // 10. Drop rover
-  lcdPrint("Step 10: Drop rover");
+
+  lcdPrint("Drop rover 1");
   dropRover();
-  lcdClear();
-  // 2nd Rover
-  // step 2: turn left 90 
+
+  // --- Rover 2 ---
+  lcdPrint("Turn left 90");
   turnLeft90();
-  // Step 3: drive forward 106 inches
+
+  lcdPrint("Forward 106in");
   driveForwardInches(106);
-  // Step 4: turn 35 degrees to right
+
+  lcdPrint("Turn right 90");
   turnRight90();
-  // drive forward 6 inches
+
+  lcdPrint("Forward 33in");
   driveForwardInches(33);
-  // turn left 90 degrees
+
+  lcdPrint("Turn left 90");
   turnLeft90();
-  // move forward 3 inches
+
+  lcdPrint("Forward 3in");
   driveForwardInches(3);
-  // pick up rover
+
+  lcdPrint("Pickup rover 2");
   pickupRover();
+
+  lcdClear();
   lcdPrint("=== DONE ===");
 }
 
